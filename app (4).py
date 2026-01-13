@@ -6,7 +6,7 @@ import os
 # Sayfa Konfigürasyonu
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="ÇEKİLİŞ HEDEF AVM",
+    page_title="META RAPOR HEDEF AVM",
     page_icon="🏆",
     layout="wide"
 )
