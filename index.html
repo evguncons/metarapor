@@ -1,486 +1,333 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Upload, 
-  FileSpreadsheet, 
-  BarChart3, 
-  PieChart, 
-  TrendingUp, 
-  Users, 
-  DollarSign, 
-  MessageCircle, 
-  MousePointer2, 
-  Eye,
-  Instagram,
-  Activity,
-  AlertCircle
-} from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer, 
-  LineChart, 
-  Line,
-  PieChart as RePieChart,
-  Pie,
-  Cell
-} from 'recharts';
-
-// --- Yardımcı Fonksiyonlar ---
-
-// Para birimi veya sayısal stringleri (örn: "1.500,50 TL") float'a çevirir
-const parseNumber = (value) => {
-  if (typeof value === 'number') return value;
-  if (!value) return 0;
-  
-  // Sadece sayı, nokta ve virgülü bırak
-  let cleanStr = value.toString().replace(/[^0-9.,-]/g, '');
-  
-  // Eğer virgül varsa ve sondaysa (TR formatı: 1.000,50), virgülü nokta yap, diğer noktaları sil
-  if (cleanStr.includes(',')) {
-    cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
-  }
-  
-  const result = parseFloat(cleanStr);
-  return isNaN(result) ? 0 : result;
-};
-
-const formatCurrency = (value) => {
-  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
-};
-
-const formatNumber = (value) => {
-  return new Intl.NumberFormat('tr-TR').format(value);
-};
-
-// --- Ana Bileşen ---
-
-export default function App() {
-  const [data, setData] = useState([]);
-  const [fileName, setFileName] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [xlsxLoaded, setXlsxLoaded] = useState(false);
-
-  // XLSX kütüphanesini CDN'den yükle
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js";
-    script.async = true;
-    script.onload = () => setXlsxLoaded(true);
-    document.body.appendChild(script);
-    return () => {
-      document.body.removeChild(script);
-    }
-  }, []);
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setLoading(true);
-    setError(null);
-    setFileName(file.name);
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target.result;
-        const workbook = window.XLSX.read(bstr, { type: 'binary' });
-        const wsname = workbook.SheetNames[0];
-        const ws = workbook.Sheets[wsname];
-        
-        // Header: 'A' diyerek sütun harfleriyle (A, B, C...) okumayı sağlıyoruz
-        const rawData = window.XLSX.utils.sheet_to_json(ws, { header: 'A' });
-
-        // İlk satırlar genellikle başlık olabilir, sayısal veri içeren satırları filtrelemeye çalışacağız
-        // Kullanıcının belirttiği sütun haritası:
-        /*
-          B: Reklam Adı
-          D: Sonuç Türü
-          E: Sonuçlar
-          F: Sonuç Başına Ücret
-          G: Harcanan Tutar
-          H: Gösterim
-          I: Erişim
-          J: Gönderi Etkileşimleri
-          K: Gönderi Yorumları
-          L: Instagram Takipleri
-          M: Yeni Mesajlaşma Kişileri
-          N: Başlatılan Mesajlaşma Konu
-          O: Karşılama Mesajı Görüntülemeleri
-          P: Mesajlaşma Kişileri
-          Q: Bağlantı Tıklamaları
-          R: CTR (Tümü)
-          S: Tekil CTR
-          T: Dışarı Yönlendiren CTR
-          U: Tekil Dışarı CTR
-          V: Instagram Profil Ziyaretleri
-        */
-
-        const processedData = rawData
-          .slice(1) // İlk satırı (Header) atla
-          .map((row, index) => {
-            // Eğer reklam adı yoksa veya harcanan tutar yoksa bu satırı boş ver (toplam satırı olabilir)
-            if (!row['B'] && !row['G']) return null;
-
-            return {
-              id: index,
-              reklamAdi: row['B'] || 'Bilinmeyen Reklam',
-              sonucTuru: row['D'] || '-',
-              sonuclar: parseNumber(row['E']),
-              sonucBasiUcret: parseNumber(row['F']),
-              harcananTutar: parseNumber(row['G']),
-              gosterim: parseNumber(row['H']),
-              erisim: parseNumber(row['I']),
-              etkilesim: parseNumber(row['J']),
-              yorumlar: parseNumber(row['K']),
-              instaTakip: parseNumber(row['L']),
-              yeniMesajKisis: parseNumber(row['M']),
-              baslatilanMesaj: parseNumber(row['N']),
-              karsilamaMesaj: parseNumber(row['O']),
-              mesajKisileri: parseNumber(row['P']),
-              linkTiklamalari: parseNumber(row['Q']),
-              ctr: parseNumber(row['R']),
-              profilZiyareti: parseNumber(row['V']),
-            };
-          })
-          .filter(item => item !== null && item.harcananTutar > 0); // Sadece harcama yapılan satırları al
-
-        if (processedData.length === 0) {
-          setError("Dosyada işlenebilir veri bulunamadı. Lütfen sütun formatının doğru olduğundan emin olun.");
-        } else {
-          setData(processedData);
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Dosya okunurken bir hata oluştu.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  // --- İstatistik Hesaplamaları ---
-  const stats = useMemo(() => {
-    if (data.length === 0) return null;
-
-    const totalSpend = data.reduce((acc, curr) => acc + curr.harcananTutar, 0);
-    const totalImpressions = data.reduce((acc, curr) => acc + curr.gosterim, 0);
-    const totalReach = data.reduce((acc, curr) => acc + curr.erisim, 0);
-    const totalLinkClicks = data.reduce((acc, curr) => acc + curr.linkTiklamalari, 0);
-    const totalResults = data.reduce((acc, curr) => acc + curr.sonuclar, 0);
-    const totalMessages = data.reduce((acc, curr) => acc + curr.baslatilanMesaj, 0);
-    const totalInstaFollows = data.reduce((acc, curr) => acc + curr.instaTakip, 0);
-    const totalProfileVisits = data.reduce((acc, curr) => acc + curr.profilZiyareti, 0);
-
-    // Ortalama CPC (Tıklama Başı Maliyet)
-    const avgCPC = totalLinkClicks > 0 ? totalSpend / totalLinkClicks : 0;
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Reklam Analiz Paneli</title>
     
-    // Ortalama CTR
-    const avgCTR = totalImpressions > 0 ? (totalLinkClicks / totalImpressions) * 100 : 0;
+    <!-- Hata Yakalayıcı -->
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error("Hata Detayı:", error);
+            const errDiv = document.getElementById('error-display') || document.createElement('div');
+            errDiv.id = 'error-display';
+            Object.assign(errDiv.style, {
+                position: 'fixed', top: '0', left: '0', width: '100%',
+                backgroundColor: '#fee2e2', color: '#991b1b', padding: '20px', zIndex: '9999',
+                fontFamily: 'sans-serif'
+            });
+            errDiv.innerHTML = `<h3>Bir hata oluştu:</h3><p>${message}</p><p>Satır: ${lineno}</p>`;
+            document.body.prepend(errDiv);
+        };
+    </script>
 
-    return {
-      totalSpend,
-      totalImpressions,
-      totalReach,
-      totalLinkClicks,
-      totalResults,
-      totalMessages,
-      totalInstaFollows,
-      totalProfileVisits,
-      avgCPC,
-      avgCTR
-    };
-  }, [data]);
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM (v17 - En Kararlı) -->
+    <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    
+    <!-- Recharts Bağımlılıkları -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.1.9/umd/Recharts.js"></script>
 
-  // Grafikler için veriyi hazırla (En çok harcayan ilk 10 reklam)
-  const topAdsBySpend = useMemo(() => {
-    return [...data].sort((a, b) => b.harcananTutar - a.harcananTutar).slice(0, 10);
-  }, [data]);
+    <!-- SheetJS (Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+    <style>
+        body { background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-  if (!xlsxLoaded) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-600">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p>Sistem Hazırlanıyor...</p>
-        </div>
-      </div>
-    );
-  }
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        
+        // --- Güvenli Recharts Yüklemesi ---
+        const RC = window.Recharts || {};
+        const SafeBarChart = RC.BarChart || (() => <div className="p-4 bg-gray-100 text-center">Grafik Yüklenemedi</div>);
+        const SafeBar = RC.Bar || (() => null);
+        const SafeXAxis = RC.XAxis || (() => null);
+        const SafeYAxis = RC.YAxis || (() => null);
+        const SafeCartesianGrid = RC.CartesianGrid || (() => null);
+        const SafeTooltip = RC.Tooltip || (() => null);
+        const SafeLegend = RC.Legend || (() => null);
+        const SafeResponsiveContainer = RC.ResponsiveContainer || (({children}) => <div>{children}</div>);
+        const SafePieChart = RC.PieChart || (() => <div className="p-4 bg-gray-100 text-center">Grafik Yüklenemedi</div>);
+        const SafePie = RC.Pie || (() => null);
+        const SafeCell = RC.Cell || (() => null);
 
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 p-4 md:p-8">
-      
-      {/* Header */}
-      <header className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-blue-900 flex items-center gap-2">
-            <Activity className="h-8 w-8 text-blue-600" />
-            Meta Reklam Analizi
-          </h1>
-          <p className="text-slate-500 mt-1">Excel raporunuzu istatistiklere dönüştürün</p>
-        </div>
+        // --- İkonlar (Düzeltildi: Tüm çoklu elemanlar <>...</> ile sarmalandı) ---
+        const IconBase = ({ d, className = "w-6 h-6", color }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={color ? {color} : {}}>
+                {d}
+            </svg>
+        );
 
-        <div className="flex items-center gap-4">
-          {data.length > 0 && (
-            <button 
-              onClick={() => {setData([]); setFileName(null);}}
-              className="text-sm text-red-600 hover:text-red-800 font-medium px-4 py-2 bg-white rounded-lg shadow-sm border border-red-100"
-            >
-              Temizle & Yeni Yükle
-            </button>
-          )}
-        </div>
-      </header>
+        const Icons = {
+            Activity: (props) => <IconBase {...props} d={<polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />} />,
+            Upload: (props) => <IconBase {...props} d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>} />,
+            FileSpreadsheet: (props) => <IconBase {...props} d={<><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></>} />,
+            DollarSign: (props) => <IconBase {...props} d={<><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>} />,
+            Users: (props) => <IconBase {...props} d={<><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>} />,
+            Eye: (props) => <IconBase {...props} d={<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>} />,
+            MousePointer2: (props) => <IconBase {...props} d={<path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>} />,
+            MessageCircle: (props) => <IconBase {...props} d={<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>} />,
+            Instagram: (props) => <IconBase {...props} d={<><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></>} />,
+            TrendingUp: (props) => <IconBase {...props} d={<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>} />,
+            BarChart3: (props) => <IconBase {...props} d={<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>} />,
+            AlertCircle: (props) => <IconBase {...props} d={<><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>} />
+        };
 
-      {/* Upload Section */}
-      {data.length === 0 ? (
-        <div className="max-w-2xl mx-auto mt-12 bg-white p-10 rounded-2xl shadow-xl border border-blue-100 text-center">
-          <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <FileSpreadsheet className="h-10 w-10 text-blue-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Rapor Dosyanızı Yükleyin</h2>
-          <p className="text-slate-500 mb-8 max-w-md mx-auto">
-            Meta Business'tan indirdiğiniz .xlsx veya .xls formatındaki raporu buraya bırakın.
-          </p>
-          
-          <label className="relative inline-flex items-center justify-center px-8 py-4 text-lg font-medium text-white transition-all duration-200 bg-blue-600 rounded-full hover:bg-blue-700 cursor-pointer shadow-lg hover:shadow-blue-500/30">
-            <Upload className="w-5 h-5 mr-2" />
-            {loading ? 'İşleniyor...' : 'Excel Dosyası Seç'}
-            <input 
-              type="file" 
-              accept=".xlsx, .xls" 
-              onChange={handleFileUpload} 
-              className="hidden" 
-              disabled={loading}
-            />
-          </label>
-          
-          {error && (
-            <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-lg flex items-center justify-center gap-2">
-              <AlertCircle className="h-5 w-5" />
-              {error}
-            </div>
-          )}
-          
-          <div className="mt-8 text-xs text-slate-400">
-            Desteklenen Sütunlar: B (İsim), G (Harcama), I (Erişim), Q (Tıklama) vb.
-          </div>
-        </div>
-      ) : (
-        /* Dashboard Section */
-        <div className="max-w-7xl mx-auto space-y-6">
-          
-          {/* KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard 
-              title="Toplam Harcama" 
-              value={formatCurrency(stats.totalSpend)} 
-              icon={DollarSign} 
-              color="bg-blue-500" 
-            />
-            <KpiCard 
-              title="Toplam Erişim" 
-              value={formatNumber(stats.totalReach)} 
-              icon={Users} 
-              color="bg-purple-500" 
-            />
-            <KpiCard 
-              title="Toplam Gösterim" 
-              value={formatNumber(stats.totalImpressions)} 
-              icon={Eye} 
-              color="bg-indigo-500" 
-            />
-            <KpiCard 
-              title="Bağlantı Tıklamaları" 
-              value={formatNumber(stats.totalLinkClicks)} 
-              icon={MousePointer2} 
-              color="bg-emerald-500" 
-            />
-          </div>
+        const parseNumber = (value) => {
+            if (typeof value === 'number') return value;
+            if (!value) return 0;
+            let cleanStr = value.toString().replace(/[^0-9.,-]/g, '');
+            if (cleanStr.includes(',') && cleanStr.indexOf(',') > cleanStr.indexOf('.')) {
+                cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+            } else if (cleanStr.includes(',') && !cleanStr.includes('.')) {
+                cleanStr = cleanStr.replace(',', '.');
+            }
+            const result = parseFloat(cleanStr);
+            return isNaN(result) ? 0 : result;
+        };
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard 
-              title="Yeni Mesajlar" 
-              value={formatNumber(stats.totalMessages)} 
-              icon={MessageCircle} 
-              color="bg-pink-500" 
-            />
-            <KpiCard 
-              title="Instagram Takip" 
-              value={formatNumber(stats.totalInstaFollows)} 
-              icon={Instagram} 
-              color="bg-orange-500" 
-            />
-            <KpiCard 
-              title="Ort. Tıklama Maliyeti (CPC)" 
-              value={formatCurrency(stats.avgCPC)} 
-              icon={TrendingUp} 
-              color="bg-cyan-600" 
-              subValue="Tıklama Başına"
-            />
-            <KpiCard 
-              title="Tıklama Oranı (CTR)" 
-              value={`%${stats.avgCTR.toFixed(2)}`} 
-              icon={BarChart3} 
-              color="bg-teal-500" 
-            />
-          </div>
+        const formatCurrency = (value) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value);
+        const formatNumber = (value) => new Intl.NumberFormat('tr-TR').format(value);
 
-          {/* Charts Row 1 */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Bar Chart: Spend vs Results */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Reklam Bazlı Harcama ve Tıklama Analizi</h3>
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topAdsBySpend}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis 
-                      dataKey="reklamAdi" 
-                      tick={{fontSize: 10}} 
-                      interval={0} 
-                      angle={-45} 
-                      textAnchor="end" 
-                      height={70}
-                    />
-                    <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" />
-                    <YAxis yAxisId="right" orientation="right" stroke="#10b981" />
-                    <Tooltip 
-                      formatter={(value, name) => [
-                        name === 'harcananTutar' ? formatCurrency(value) : value, 
-                        name === 'harcananTutar' ? 'Harcama' : 'Tıklama'
-                      ]}
-                      labelStyle={{color: '#1e293b'}}
-                    />
-                    <Legend />
-                    <Bar yAxisId="left" dataKey="harcananTutar" name="Harcama (TL)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="right" dataKey="linkTiklamalari" name="Tıklamalar" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+        function App() {
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
 
-            {/* Pie Chart: Interaction Types */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Etkileşim Dağılımı</h3>
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RePieChart>
-                    <Pie
-                      data={[
-                        { name: 'Tıklamalar', value: stats.totalLinkClicks },
-                        { name: 'Mesajlar', value: stats.totalMessages },
-                        { name: 'Yorumlar', value: data.reduce((a, b) => a + b.yorumlar, 0) },
-                        { name: 'Takip', value: stats.totalInstaFollows },
-                        { name: 'Profil Ziyareti', value: stats.totalProfileVisits },
-                      ].filter(x => x.value > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {data.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend iconType="circle" layout="vertical" verticalAlign="middle" align="right" />
-                  </RePieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
 
-          {/* Detailed Data Table */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800">Reklam Performans Detayları</h3>
-              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">En Yüksek Harcamaya Göre Sıralı</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 text-slate-500 uppercase font-medium text-xs">
-                  <tr>
-                    <th className="px-6 py-3">Reklam Adı</th>
-                    <th className="px-6 py-3 text-right">Harcama</th>
-                    <th className="px-6 py-3 text-right">Sonuçlar</th>
-                    <th className="px-6 py-3 text-right">Birim Maliyet</th>
-                    <th className="px-6 py-3 text-right">Erişim</th>
-                    <th className="px-6 py-3 text-right">CTR</th>
-                    <th className="px-6 py-3 text-right">Mesajlar</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {topAdsBySpend.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-slate-700 max-w-xs truncate" title={row.reklamAdi}>
-                        {row.reklamAdi}
-                      </td>
-                      <td className="px-6 py-4 text-right font-semibold text-slate-700">
-                        {formatCurrency(row.harcananTutar)}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {row.sonuclar} <span className="text-xs text-slate-400 block">{row.sonucTuru}</span>
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-600">
-                        {formatCurrency(row.sonucBasiUcret)}
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-600">
-                        {formatNumber(row.erisim)}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          row.ctr > 2 ? 'bg-green-100 text-green-700' : 
-                          row.ctr > 1 ? 'bg-yellow-100 text-yellow-700' : 
-                          'bg-red-50 text-red-600'
-                        }`}>
-                          %{row.ctr.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-600">
-                        {row.baslatilanMesaj}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                setLoading(true);
+                setError(null);
 
-        </div>
-      )}
-    </div>
-  );
-}
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const bstr = evt.target.result;
+                        const workbook = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = workbook.SheetNames[0];
+                        const ws = workbook.Sheets[wsname];
+                        const rawData = XLSX.utils.sheet_to_json(ws, { header: 'A' });
 
-// --- Alt Bileşenler ---
+                        if (!rawData || rawData.length < 2) throw new Error("Dosya boş veya uygun formatta değil.");
 
-function KpiCard({ title, value, subValue, icon: Icon, color }) {
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
-          {subValue && <p className="text-xs text-slate-400 mt-1">{subValue}</p>}
-        </div>
-        <div className={`p-3 rounded-lg ${color} bg-opacity-10`}>
-          <Icon className={`h-6 w-6 ${color.replace('bg-', 'text-')}`} />
-        </div>
-      </div>
-    </div>
-  );
-}
+                        const processedData = rawData
+                            .slice(1)
+                            .map((row, index) => {
+                                if (!row['B'] && !row['G']) return null;
+                                return {
+                                    id: index,
+                                    reklamAdi: row['B'] || 'Bilinmeyen Reklam',
+                                    sonucTuru: row['D'] || '-',
+                                    sonuclar: parseNumber(row['E']),
+                                    sonucBasiUcret: parseNumber(row['F']),
+                                    harcananTutar: parseNumber(row['G']),
+                                    gosterim: parseNumber(row['H']),
+                                    erisim: parseNumber(row['I']),
+                                    etkilesim: parseNumber(row['J']),
+                                    yorumlar: parseNumber(row['K']),
+                                    instaTakip: parseNumber(row['L']),
+                                    yeniMesajKisis: parseNumber(row['M']),
+                                    baslatilanMesaj: parseNumber(row['N']),
+                                    karsilamaMesaj: parseNumber(row['O']),
+                                    mesajKisileri: parseNumber(row['P']),
+                                    linkTiklamalari: parseNumber(row['Q']),
+                                    ctr: parseNumber(row['R']),
+                                    profilZiyareti: parseNumber(row['V']),
+                                };
+                            })
+                            .filter(item => item !== null && item.harcananTutar > 0);
+
+                        if (processedData.length === 0) {
+                            setError("İşlenebilir veri bulunamadı. Lütfen B ve G sütunlarının dolu olduğu doğru Excel formatını yükleyin.");
+                        } else {
+                            setData(processedData);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        setError("Dosya okuma hatası: " + err.message);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            const stats = useMemo(() => {
+                if (data.length === 0) return null;
+                const totalSpend = data.reduce((acc, curr) => acc + curr.harcananTutar, 0);
+                const totalImpressions = data.reduce((acc, curr) => acc + curr.gosterim, 0);
+                const totalReach = data.reduce((acc, curr) => acc + curr.erisim, 0);
+                const totalLinkClicks = data.reduce((acc, curr) => acc + curr.linkTiklamalari, 0);
+                const totalResults = data.reduce((acc, curr) => acc + curr.sonuclar, 0);
+                const totalMessages = data.reduce((acc, curr) => acc + curr.baslatilanMesaj, 0);
+                const totalInstaFollows = data.reduce((acc, curr) => acc + curr.instaTakip, 0);
+                const totalProfileVisits = data.reduce((acc, curr) => acc + curr.profilZiyareti, 0);
+                const avgCPC = totalLinkClicks > 0 ? totalSpend / totalLinkClicks : 0;
+                const avgCTR = totalImpressions > 0 ? (totalLinkClicks / totalImpressions) * 100 : 0;
+
+                return { totalSpend, totalImpressions, totalReach, totalLinkClicks, totalResults, totalMessages, totalInstaFollows, totalProfileVisits, avgCPC, avgCTR };
+            }, [data]);
+
+            const topAdsBySpend = useMemo(() => [...data].sort((a, b) => b.harcananTutar - a.harcananTutar).slice(0, 10), [data]);
+            const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+            return (
+                <div className="min-h-screen bg-slate-50 font-sans text-slate-800 p-4 md:p-8">
+                    <header className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-bold text-blue-900 flex items-center gap-2">
+                                <Icons.Activity className="h-8 w-8 text-blue-600" />
+                                Meta Reklam Analizi
+                            </h1>
+                            <p className="text-slate-500 mt-1">Excel raporunuzu istatistiklere dönüştürün</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {data.length > 0 && (
+                                <button onClick={() => setData([])} className="text-sm text-red-600 hover:text-red-800 font-medium px-4 py-2 bg-white rounded-lg shadow-sm border border-red-100 transition-colors">
+                                    Temizle & Yeni Yükle
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    {data.length === 0 ? (
+                        <div className="max-w-2xl mx-auto mt-12 bg-white p-10 rounded-2xl shadow-xl border border-blue-100 text-center">
+                            <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <Icons.FileSpreadsheet className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-2">Rapor Dosyanızı Yükleyin</h2>
+                            <p className="text-slate-500 mb-8 max-w-md mx-auto">Meta Business panelinden indirdiğiniz .xlsx formatındaki raporu buraya yükleyin.</p>
+                            <label className="relative inline-flex items-center justify-center px-8 py-4 text-lg font-medium text-white transition-all duration-200 bg-blue-600 rounded-full hover:bg-blue-700 cursor-pointer shadow-lg hover:shadow-blue-500/30">
+                                <Icons.Upload className="w-5 h-5 mr-2" />
+                                {loading ? 'İşleniyor...' : 'Excel Dosyası Seç'}
+                                <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" disabled={loading} />
+                            </label>
+                            {error && (
+                                <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-lg flex items-center justify-center gap-2 border border-red-100">
+                                    <Icons.AlertCircle className="h-5 w-5" />
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="max-w-7xl mx-auto space-y-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <KpiCard title="Toplam Harcama" value={formatCurrency(stats.totalSpend)} icon={Icons.DollarSign} color="bg-blue-500" />
+                                <KpiCard title="Toplam Erişim" value={formatNumber(stats.totalReach)} icon={Icons.Users} color="bg-purple-500" />
+                                <KpiCard title="Toplam Gösterim" value={formatNumber(stats.totalImpressions)} icon={Icons.Eye} color="bg-indigo-500" />
+                                <KpiCard title="Bağlantı Tıklamaları" value={formatNumber(stats.totalLinkClicks)} icon={Icons.MousePointer2} color="bg-emerald-500" />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <KpiCard title="Yeni Mesajlar" value={formatNumber(stats.totalMessages)} icon={Icons.MessageCircle} color="bg-pink-500" />
+                                <KpiCard title="Instagram Takip" value={formatNumber(stats.totalInstaFollows)} icon={Icons.Instagram} color="bg-orange-500" />
+                                <KpiCard title="Ort. Tıklama Maliyeti" value={formatCurrency(stats.avgCPC)} icon={Icons.TrendingUp} color="bg-cyan-600" subValue="CPC" />
+                                <KpiCard title="Tıklama Oranı" value={`%${stats.avgCTR.toFixed(2)}`} icon={Icons.BarChart3} color="bg-teal-500" subValue="CTR" />
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4">Harcama vs Tıklama (En Çok Harcayan 10 Reklam)</h3>
+                                    <div className="h-[300px]">
+                                        <SafeResponsiveContainer width="100%" height="100%">
+                                            <SafeBarChart data={topAdsBySpend}>
+                                                <SafeCartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                <SafeXAxis dataKey="reklamAdi" tick={{fontSize: 10}} interval={0} angle={-45} textAnchor="end" height={70} />
+                                                <SafeYAxis yAxisId="left" orientation="left" stroke="#3b82f6" />
+                                                <SafeYAxis yAxisId="right" orientation="right" stroke="#10b981" />
+                                                <SafeTooltip formatter={(value, name) => [name === 'harcananTutar' ? formatCurrency(value) : value, name === 'harcananTutar' ? 'Harcama' : 'Tıklama']} />
+                                                <SafeLegend />
+                                                <SafeBar yAxisId="left" dataKey="harcananTutar" name="Harcama" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                                <SafeBar yAxisId="right" dataKey="linkTiklamalari" name="Tıklama" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                            </SafeBarChart>
+                                        </SafeResponsiveContainer>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4">Etkileşim Dağılımı</h3>
+                                    <div className="h-[300px]">
+                                        <SafeResponsiveContainer width="100%" height="100%">
+                                            <SafePieChart>
+                                                <SafePie data={[{ name: 'Tıklama', value: stats.totalLinkClicks }, { name: 'Mesaj', value: stats.totalMessages }, { name: 'Takip', value: stats.totalInstaFollows }, { name: 'Profil', value: stats.totalProfileVisits }].filter(x => x.value > 0)} cx="50%" cy="50%" innerRadius={60} outerRadius={80} fill="#8884d8" paddingAngle={5} dataKey="value">
+                                                    {data.map((entry, index) => <SafeCell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                                </SafePie>
+                                                <SafeTooltip />
+                                                <SafeLegend layout="vertical" verticalAlign="middle" align="right" />
+                                            </SafePieChart>
+                                        </SafeResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                <div className="p-6 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">Detaylı Performans Tablosu</h3></div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-50 text-slate-500 uppercase font-medium text-xs">
+                                            <tr>
+                                                <th className="px-6 py-3">Reklam Adı</th>
+                                                <th className="px-6 py-3 text-right">Harcama</th>
+                                                <th className="px-6 py-3 text-right">Sonuç</th>
+                                                <th className="px-6 py-3 text-right">Birim Ücret</th>
+                                                <th className="px-6 py-3 text-right">Erişim</th>
+                                                <th className="px-6 py-3 text-right">CTR</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {topAdsBySpend.map((row) => (
+                                                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="px-6 py-4 font-medium text-slate-700 max-w-xs truncate" title={row.reklamAdi}>{row.reklamAdi}</td>
+                                                    <td className="px-6 py-4 text-right font-semibold text-slate-700">{formatCurrency(row.harcananTutar)}</td>
+                                                    <td className="px-6 py-4 text-right">{row.sonuclar} <span className="text-xs text-slate-400 block">{row.sonucTuru}</span></td>
+                                                    <td className="px-6 py-4 text-right text-slate-600">{formatCurrency(row.sonucBasiUcret)}</td>
+                                                    <td className="px-6 py-4 text-right text-slate-600">{formatNumber(row.erisim)}</td>
+                                                    <td className="px-6 py-4 text-right"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${row.ctr > 2 ? 'bg-green-100 text-green-700' : row.ctr > 1 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-50 text-red-600'}`}>%{row.ctr.toFixed(2)}</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function KpiCard({ title, value, subValue, icon: Icon, color }) {
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between mb-4">
+                        <div>
+                            <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
+                            <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
+                            {subValue && <p className="text-xs text-slate-400 mt-1">{subValue}</p>}
+                        </div>
+                        <div className={`p-3 rounded-lg ${color} bg-opacity-10`}>
+                            <Icon className={`h-6 w-6 ${color.replace('bg-', 'text-')}`} />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
