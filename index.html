@@ -66,7 +66,7 @@
         const SafePie = RC.Pie || (() => null);
         const SafeCell = RC.Cell || (() => null);
 
-        // --- İkonlar (Düzeltildi: Tüm çoklu elemanlar <>...</> ile sarmalandı) ---
+        // --- İkonlar ---
         const IconBase = ({ d, className = "w-6 h-6", color }) => (
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={color ? {color} : {}}>
                 {d}
@@ -85,7 +85,9 @@
             Instagram: (props) => <IconBase {...props} d={<><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></>} />,
             TrendingUp: (props) => <IconBase {...props} d={<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>} />,
             BarChart3: (props) => <IconBase {...props} d={<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>} />,
-            AlertCircle: (props) => <IconBase {...props} d={<><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>} />
+            AlertCircle: (props) => <IconBase {...props} d={<><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>} />,
+            Calendar: (props) => <IconBase {...props} d={<><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>} />,
+            Wallet: (props) => <IconBase {...props} d={<><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></>} />
         };
 
         const parseNumber = (value) => {
@@ -108,10 +110,31 @@
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState(null);
+            
+            // Yeni State'ler: Ay, Kazanç ve Dosya
+            const [selectedMonth, setSelectedMonth] = useState('Ocak');
+            const [monthlyRevenue, setMonthlyRevenue] = useState('');
+            const [selectedFile, setSelectedFile] = useState(null);
 
-            const handleFileUpload = (e) => {
+            const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+            const handleFileSelect = (e) => {
                 const file = e.target.files[0];
-                if (!file) return;
+                if (file) {
+                    setSelectedFile(file);
+                    setError(null);
+                }
+            };
+
+            const handleAnalyze = () => {
+                if (!monthlyRevenue || isNaN(parseFloat(monthlyRevenue))) {
+                    setError("Lütfen geçerli bir kazanç tutarı giriniz.");
+                    return;
+                }
+                if (!selectedFile) {
+                    setError("Lütfen analiz edilecek Excel dosyasını seçiniz.");
+                    return;
+                }
 
                 setLoading(true);
                 setError(null);
@@ -166,7 +189,7 @@
                         setLoading(false);
                     }
                 };
-                reader.readAsBinaryString(file);
+                reader.readAsBinaryString(selectedFile);
             };
 
             const stats = useMemo(() => {
@@ -182,11 +205,28 @@
                 const avgCPC = totalLinkClicks > 0 ? totalSpend / totalLinkClicks : 0;
                 const avgCTR = totalImpressions > 0 ? (totalLinkClicks / totalImpressions) * 100 : 0;
 
-                return { totalSpend, totalImpressions, totalReach, totalLinkClicks, totalResults, totalMessages, totalInstaFollows, totalProfileVisits, avgCPC, avgCTR };
-            }, [data]);
+                // Finansal Hesaplamalar
+                const revenue = parseFloat(monthlyRevenue) || 0;
+                const profit = revenue - totalSpend;
+                const roas = totalSpend > 0 ? revenue / totalSpend : 0;
+
+                return { 
+                    totalSpend, totalImpressions, totalReach, totalLinkClicks, totalResults, 
+                    totalMessages, totalInstaFollows, totalProfileVisits, avgCPC, avgCTR,
+                    revenue, profit, roas
+                };
+            }, [data, monthlyRevenue]);
 
             const topAdsBySpend = useMemo(() => [...data].sort((a, b) => b.harcananTutar - a.harcananTutar).slice(0, 10), [data]);
             const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+            // Verileri sıfırla ve başa dön
+            const handleReset = () => {
+                setData([]);
+                setSelectedFile(null);
+                setMonthlyRevenue('');
+                setError(null);
+            };
 
             return (
                 <div className="min-h-screen bg-slate-50 font-sans text-slate-800 p-4 md:p-8">
@@ -196,54 +236,161 @@
                                 <Icons.Activity className="h-8 w-8 text-blue-600" />
                                 Meta Reklam Analizi
                             </h1>
-                            <p className="text-slate-500 mt-1">Excel raporunuzu istatistiklere dönüştürün</p>
+                            <p className="text-slate-500 mt-1">Excel raporunuzu ve ciro verilerinizi analiz edin</p>
                         </div>
                         <div className="flex items-center gap-4">
                             {data.length > 0 && (
-                                <button onClick={() => setData([])} className="text-sm text-red-600 hover:text-red-800 font-medium px-4 py-2 bg-white rounded-lg shadow-sm border border-red-100 transition-colors">
-                                    Temizle & Yeni Yükle
+                                <button onClick={handleReset} className="text-sm text-red-600 hover:text-red-800 font-medium px-4 py-2 bg-white rounded-lg shadow-sm border border-red-100 transition-colors">
+                                    Yeni Analiz Başlat
                                 </button>
                             )}
                         </div>
                     </header>
 
                     {data.length === 0 ? (
-                        <div className="max-w-2xl mx-auto mt-12 bg-white p-10 rounded-2xl shadow-xl border border-blue-100 text-center">
-                            <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <Icons.FileSpreadsheet className="h-10 w-10 text-blue-600" />
-                            </div>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-2">Rapor Dosyanızı Yükleyin</h2>
-                            <p className="text-slate-500 mb-8 max-w-md mx-auto">Meta Business panelinden indirdiğiniz .xlsx formatındaki raporu buraya yükleyin.</p>
-                            <label className="relative inline-flex items-center justify-center px-8 py-4 text-lg font-medium text-white transition-all duration-200 bg-blue-600 rounded-full hover:bg-blue-700 cursor-pointer shadow-lg hover:shadow-blue-500/30">
-                                <Icons.Upload className="w-5 h-5 mr-2" />
-                                {loading ? 'İşleniyor...' : 'Excel Dosyası Seç'}
-                                <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" disabled={loading} />
-                            </label>
-                            {error && (
-                                <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-lg flex items-center justify-center gap-2 border border-red-100">
-                                    <Icons.AlertCircle className="h-5 w-5" />
-                                    {error}
+                        <div className="max-w-2xl mx-auto mt-8 bg-white p-8 rounded-2xl shadow-xl border border-blue-100">
+                            <div className="text-center mb-8">
+                                <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Icons.FileSpreadsheet className="h-8 w-8 text-blue-600" />
                                 </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="max-w-7xl mx-auto space-y-6">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <KpiCard title="Toplam Harcama" value={formatCurrency(stats.totalSpend)} icon={Icons.DollarSign} color="bg-blue-500" />
-                                <KpiCard title="Toplam Erişim" value={formatNumber(stats.totalReach)} icon={Icons.Users} color="bg-purple-500" />
-                                <KpiCard title="Toplam Gösterim" value={formatNumber(stats.totalImpressions)} icon={Icons.Eye} color="bg-indigo-500" />
-                                <KpiCard title="Bağlantı Tıklamaları" value={formatNumber(stats.totalLinkClicks)} icon={Icons.MousePointer2} color="bg-emerald-500" />
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <KpiCard title="Yeni Mesajlar" value={formatNumber(stats.totalMessages)} icon={Icons.MessageCircle} color="bg-pink-500" />
-                                <KpiCard title="Instagram Takip" value={formatNumber(stats.totalInstaFollows)} icon={Icons.Instagram} color="bg-orange-500" />
-                                <KpiCard title="Ort. Tıklama Maliyeti" value={formatCurrency(stats.avgCPC)} icon={Icons.TrendingUp} color="bg-cyan-600" subValue="CPC" />
-                                <KpiCard title="Tıklama Oranı" value={`%${stats.avgCTR.toFixed(2)}`} icon={Icons.BarChart3} color="bg-teal-500" subValue="CTR" />
+                                <h2 className="text-2xl font-bold text-slate-800">Veri Girişi & Analiz</h2>
+                                <p className="text-slate-500 mt-2">Dönem, kazanç ve reklam verilerinizi girerek rapor oluşturun.</p>
                             </div>
 
+                            <div className="space-y-6">
+                                {/* 1. Ay Seçimi */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                                        <Icons.Calendar className="w-4 h-4 text-blue-500" />
+                                        Analiz Dönemi (Ay)
+                                    </label>
+                                    <select 
+                                        value={selectedMonth} 
+                                        onChange={(e) => setSelectedMonth(e.target.value)}
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    >
+                                        {months.map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* 2. Kazanç Girişi */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                                        <Icons.Wallet className="w-4 h-4 text-green-500" />
+                                        Bu Ayki Toplam Kazanç (Ciro)
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        value={monthlyRevenue}
+                                        onChange={(e) => setMonthlyRevenue(e.target.value)}
+                                        placeholder="Örn: 50000"
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                                    />
+                                    <p className="text-xs text-slate-400 mt-1">Net kâr ve ROAS hesabı için gereklidir.</p>
+                                </div>
+
+                                {/* 3. Dosya Yükleme */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
+                                        <Icons.Upload className="w-4 h-4 text-purple-500" />
+                                        Meta Reklam Raporu (Excel)
+                                    </label>
+                                    <div className="relative">
+                                        <input 
+                                            type="file" 
+                                            accept=".xlsx, .xls" 
+                                            onChange={handleFileSelect}
+                                            className="block w-full text-sm text-slate-500
+                                                file:mr-4 file:py-3 file:px-4
+                                                file:rounded-full file:border-0
+                                                file:text-sm file:font-semibold
+                                                file:bg-blue-50 file:text-blue-700
+                                                hover:file:bg-blue-100 cursor-pointer border border-slate-200 rounded-lg"
+                                        />
+                                    </div>
+                                    {selectedFile && <p className="text-sm text-green-600 mt-2">✓ {selectedFile.name} seçildi</p>}
+                                </div>
+
+                                {/* Hata Mesajı */}
+                                {error && (
+                                    <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 border border-red-100">
+                                        <Icons.AlertCircle className="h-5 w-5 flex-shrink-0" />
+                                        <span>{error}</span>
+                                    </div>
+                                )}
+
+                                {/* 4. Analiz Butonu */}
+                                <button 
+                                    onClick={handleAnalyze}
+                                    disabled={loading}
+                                    className={`w-full py-4 px-6 rounded-xl font-bold text-white text-lg shadow-lg transition-all transform hover:scale-[1.02] 
+                                        ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/30'}`}
+                                >
+                                    {loading ? 'Veriler İşleniyor...' : 'Analiz Et'}
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
+                            <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-2">
+                                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm">{selectedMonth} Ayı Raporu</span>
+                                </h2>
+                                <div className="text-right">
+                                    <p className="text-xs text-slate-400">Analiz Tarihi</p>
+                                    <p className="text-sm font-medium text-slate-600">{new Date().toLocaleDateString('tr-TR')}</p>
+                                </div>
+                            </div>
+
+                            {/* Finansal Özet (Üst Bar) */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg shadow-green-500/20">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="text-green-100 font-medium mb-1">Toplam Ciro (Kazanç)</p>
+                                            <h3 className="text-3xl font-bold">{formatCurrency(stats.revenue)}</h3>
+                                        </div>
+                                        <div className="p-2 bg-white/20 rounded-lg"><Icons.Wallet className="w-6 h-6 text-white" /></div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-red-50 rounded-bl-full -mr-4 -mt-4 z-0"></div>
+                                    <div className="relative z-10 flex justify-between items-start">
+                                        <div>
+                                            <p className="text-slate-500 font-medium mb-1">Toplam Reklam Gideri</p>
+                                            <h3 className="text-3xl font-bold text-slate-800">{formatCurrency(stats.totalSpend)}</h3>
+                                        </div>
+                                        <div className="p-2 bg-red-100 rounded-lg"><Icons.DollarSign className="w-6 h-6 text-red-600" /></div>
+                                    </div>
+                                </div>
+
+                                <div className={`rounded-2xl p-6 text-white shadow-lg relative overflow-hidden ${stats.profit >= 0 ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/20' : 'bg-gradient-to-br from-red-500 to-pink-600'}`}>
+                                    <div className="flex justify-between items-start relative z-10">
+                                        <div>
+                                            <p className="text-white/80 font-medium mb-1">Net Kâr (Ciro - Gider)</p>
+                                            <h3 className="text-3xl font-bold">{formatCurrency(stats.profit)}</h3>
+                                            <p className="text-sm mt-2 px-2 py-1 bg-white/20 rounded inline-block">
+                                                ROAS: {stats.roas.toFixed(2)}x
+                                            </p>
+                                        </div>
+                                        <div className="p-2 bg-white/20 rounded-lg"><Icons.TrendingUp className="w-6 h-6 text-white" /></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Detaylı KPI'lar */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <KpiCard title="Toplam Erişim" value={formatNumber(stats.totalReach)} icon={Icons.Users} color="bg-purple-500" />
+                                <KpiCard title="Bağlantı Tıklamaları" value={formatNumber(stats.totalLinkClicks)} icon={Icons.MousePointer2} color="bg-emerald-500" />
+                                <KpiCard title="Yeni Mesajlar" value={formatNumber(stats.totalMessages)} icon={Icons.MessageCircle} color="bg-pink-500" />
+                                <KpiCard title="Ort. Tıklama Maliyeti" value={formatCurrency(stats.avgCPC)} icon={Icons.TrendingUp} color="bg-cyan-600" subValue="CPC" />
+                            </div>
+
+                            {/* Grafikler */}
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-4">Harcama vs Tıklama (En Çok Harcayan 10 Reklam)</h3>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4">En Çok Harcayan Reklamlar ve Getirisi</h3>
                                     <div className="h-[300px]">
                                         <SafeResponsiveContainer width="100%" height="100%">
                                             <SafeBarChart data={topAdsBySpend}>
@@ -275,6 +422,7 @@
                                 </div>
                             </div>
 
+                            {/* Tablo */}
                             <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
                                 <div className="p-6 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">Detaylı Performans Tablosu</h3></div>
                                 <div className="overflow-x-auto">
