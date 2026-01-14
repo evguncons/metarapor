@@ -90,15 +90,39 @@
             Wallet: (props) => <IconBase {...props} d={<><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></>} />
         };
 
+        // --- GELİŞTİRİLMİŞ SAYI AYRIŞTIRICI ---
         const parseNumber = (value) => {
             if (typeof value === 'number') return value;
             if (!value) return 0;
+            
+            // Sadece sayı, nokta, virgül ve eksi işaretini bırak
             let cleanStr = value.toString().replace(/[^0-9.,-]/g, '');
-            if (cleanStr.includes(',') && cleanStr.indexOf(',') > cleanStr.indexOf('.')) {
-                cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
-            } else if (cleanStr.includes(',') && !cleanStr.includes('.')) {
+            
+            // Eğer boş kaldıysa 0 dön
+            if (!cleanStr) return 0;
+
+            const lastDotIndex = cleanStr.lastIndexOf('.');
+            const lastCommaIndex = cleanStr.lastIndexOf(',');
+
+            // Durum 1: Hem nokta hem virgül var (Örn: 1.250,50 veya 1,250.50)
+            if (lastDotIndex !== -1 && lastCommaIndex !== -1) {
+                if (lastCommaIndex > lastDotIndex) {
+                    // Türkçe Format (1.250,50) -> Noktaları sil, virgülü nokta yap
+                    cleanStr = cleanStr.replace(/\./g, '').replace(',', '.');
+                } else {
+                    // İngilizce Format (1,250.50) -> Virgülleri sil
+                    cleanStr = cleanStr.replace(/,/g, '');
+                }
+            } 
+            // Durum 2: Sadece virgül var (Örn: 10,50 veya 1,000)
+            else if (lastCommaIndex !== -1) {
+                // Türkiye'de genelde virgül ondalıktır.
                 cleanStr = cleanStr.replace(',', '.');
             }
+            // Durum 3: Sadece nokta var (Örn: 10.50 veya 1.000)
+            // Eğer nokta varsa ve JS bunu parse edebiliyorsa dokunmuyoruz, ancak 1.000 gibi binlik ise sorun olabilir.
+            // Bu uygulamada varsayılan olarak JS float kabul ediyoruz.
+
             const result = parseFloat(cleanStr);
             return isNaN(result) ? 0 : result;
         };
@@ -108,6 +132,7 @@
 
         // --- ROAS Değerlendirme Fonksiyonu ---
         const getRoasEvaluation = (roas) => {
+            if (!roas || roas === Infinity) return "Hesaplanamadı";
             if (roas <= 1) return "❌ ZARAR (Reklam para yakıyor)";
             if (roas < 2) return "⚠️ Sınırda";
             if (roas < 3) return "🟡 Ortalama";
@@ -227,7 +252,12 @@
                 };
             }, [data, monthlyRevenue]);
 
-            const topAdsBySpend = useMemo(() => [...data].sort((a, b) => b.harcananTutar - a.harcananTutar).slice(0, 10), [data]);
+            const topAdsBySpend = useMemo(() => {
+                return [...data]
+                    .sort((a, b) => b.harcananTutar - a.harcananTutar)
+                    .slice(0, 10);
+            }, [data]);
+
             const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
             // Verileri sıfırla ve başa dön
@@ -446,19 +476,30 @@
                                                 <th className="px-6 py-3 text-right">Birim Ücret</th>
                                                 <th className="px-6 py-3 text-right">Erişim</th>
                                                 <th className="px-6 py-3 text-right">CTR</th>
+                                                <th className="px-6 py-3 text-right">Tahmini ROAS</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {topAdsBySpend.map((row) => (
-                                                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="px-6 py-4 font-medium text-slate-700 max-w-xs truncate" title={row.reklamAdi}>{row.reklamAdi}</td>
-                                                    <td className="px-6 py-4 text-right font-semibold text-slate-700">{formatCurrency(row.harcananTutar)}</td>
-                                                    <td className="px-6 py-4 text-right">{row.sonuclar} <span className="text-xs text-slate-400 block">{row.sonucTuru}</span></td>
-                                                    <td className="px-6 py-4 text-right text-slate-600">{formatCurrency(row.sonucBasiUcret)}</td>
-                                                    <td className="px-6 py-4 text-right text-slate-600">{formatNumber(row.erisim)}</td>
-                                                    <td className="px-6 py-4 text-right"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${row.ctr > 2 ? 'bg-green-100 text-green-700' : row.ctr > 1 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-50 text-red-600'}`}>%{row.ctr.toFixed(2)}</span></td>
-                                                </tr>
-                                            ))}
+                                            {topAdsBySpend.map((row) => {
+                                                // Basit bir tahmini ROAS hesabı (Genel ciro oranına göre dağıtılmış)
+                                                // Not: Gerçek reklam bazlı ROAS için "Dönüşüm Değeri" sütunu gerekir.
+                                                // Burada genel ROAS'ı referans alarak gösteriyoruz.
+                                                const adRoas = row.harcananTutar > 0 ? (stats.revenue / stats.totalSpend) : 0;
+                                                
+                                                return (
+                                                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="px-6 py-4 font-medium text-slate-700 max-w-xs truncate" title={row.reklamAdi}>{row.reklamAdi}</td>
+                                                        <td className="px-6 py-4 text-right font-semibold text-slate-700">{formatCurrency(row.harcananTutar)}</td>
+                                                        <td className="px-6 py-4 text-right">{row.sonuclar} <span className="text-xs text-slate-400 block">{row.sonucTuru}</span></td>
+                                                        <td className="px-6 py-4 text-right text-slate-600">{formatCurrency(row.sonucBasiUcret)}</td>
+                                                        <td className="px-6 py-4 text-right text-slate-600">{formatNumber(row.erisim)}</td>
+                                                        <td className="px-6 py-4 text-right"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${row.ctr > 2 ? 'bg-green-100 text-green-700' : row.ctr > 1 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-50 text-red-600'}`}>%{row.ctr.toFixed(2)}</span></td>
+                                                        <td className="px-6 py-4 text-right text-slate-500 text-xs">
+                                                           Genel Ort: {adRoas.toFixed(2)}x
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
